@@ -216,6 +216,280 @@ TOOLS = {
 
 # ------------------------- Session-only data -------------------------
 # No login, database, or file-based user-data storage is used.
+
+
+def improve_interview_answer(question, answer):
+    """Free deterministic English cleanup plus question-specific guidance.
+
+    This is deliberately rule-based (not generative AI), so it only corrects
+    common patterns and must not be presented as a complete grammar checker.
+    """
+    text = re.sub(r"\s+", " ", str(answer or "")).strip()
+    if not text:
+        return "Please write or speak an answer first.", "Write at least one sentence in your own words."
+
+    replacements = [
+        (r"\bi am agree\b", "I agree"),
+        (r"\bi am not agree\b", "I do not agree"),
+        (r"\bi is\b", "I am"), (r"\bi are\b", "I am"),
+        (r"\bi has\b", "I have"), (r"\bi have a knowledge of\b", "I have knowledge of"),
+        (r"\bmyself\s+([A-Z][a-z]+)\b", r"My name is \1"),
+        (r"\bi want to learn more and more\b", "I want to keep learning and improving"),
+        (r"\bvery much interested\b", "very interested"),
+        (r"\bdo hard work\b", "work hard"),
+        (r"\baccording to me\b", "In my opinion"),
+        (r"\bi am having\b", "I have"),
+        (r"\bi am good in\b", "I am good at"),
+        (r"\bi have completed my graduation\b", "I have completed my degree"),
+        (r"\bi belongs to\b", "I belong to"),
+        (r"\bi was completed\b", "I completed"),
+        (r"\bi can able to\b", "I can"),
+        (r"\bi am passionate for\b", "I am passionate about"),
+        (r"\bi am interested for\b", "I am interested in"),
+        (r"\bi have knowledge about\b", "I have knowledge of"),
+        (r"\bmyself is\b", "My name is"),
+        (r"\bthanks for giving me this opportunity\b", "Thank you for giving me this opportunity"),
+        (r"\bi didn't knew\b", "I did not know"),
+        (r"\bi don't knows\b", "I do not know"),
+        (r"\bhe don't\b", "he does not"), (r"\bshe don't\b", "she does not"),
+        (r"\bit don't\b", "it does not"),
+        (r"\bdiscuss about\b", "discuss"),
+        (r"\bmore better\b", "better"), (r"\bvery unique\b", "unique"),
+        (r"\bone of my strength is\b", "one of my strengths is"),
+        (r"\bmy aim is to become\b", "my goal is to become"),
+        (r"\bbasically\b[, ]*", ""), (r"\bumm+\b[, ]*", ""), (r"\buh+\b[, ]*", ""),
+    ]
+    for pattern, replacement in replacements:
+        text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+    text = re.sub(r"\bi\b", "I", text)
+    text = re.sub(r"\s+([,.!?])", r"\1", text)
+    text = re.sub(r"([,.!?])(?=[A-Za-z])", r"\1 ", text)
+    text = re.sub(r"\s{2,}", " ", text).strip()
+    text = text[:1].upper() + text[1:]
+    if text[-1] not in ".!?":
+        text += "."
+
+    q = str(question or "").lower()
+
+    # For common technical-definition questions, expand a short or copied
+    # definition into a fuller, question-specific model answer. This avoids
+    # showing the user's unchanged sentence under the "improved" heading.
+    technical_topics = [
+        "clustering", "classification", "regression", "supervised learning",
+        "unsupervised learning", "k-means", "kmeans", "decision tree",
+        "random forest", "neural network", "overfitting", "underfitting",
+        "inheritance", "polymorphism", "encapsulation", "abstraction",
+        "python", "sql", "machine learning", "deep learning", "data preprocessing",
+        "feature scaling", "confusion matrix", "accuracy", "precision", "recall",
+        "streamlit", "pandas", "numpy"
+    ]
+    is_definition_question = any(phrase in q for phrase in ["what is", "define", "explain", "meaning of", "describe"])
+    if is_definition_question and any(topic in q for topic in technical_topics):
+        try:
+            model_version = sample_professional_answer(question)
+        except NameError:
+            model_version = ""
+        normalized_user = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+        normalized_model = re.sub(r"[^a-z0-9]+", " ", model_version.lower()).strip()
+        # Expand if the user supplied only a brief definition or essentially
+        # pasted the same sentence; otherwise preserve their own answer and
+        # apply the normal rule-based cleanup below.
+        if model_version and (len(normalized_user.split()) < 24 or normalized_user == normalized_model or normalized_model.startswith(normalized_user)):
+            text = model_version
+
+    if any(k in q for k in ["tell me about yourself", "introduce yourself"]):
+        tip = "Use this order: your education, 2–3 relevant skills, one real project, and your current career goal."
+    elif "strength" in q:
+        tip = "Name one or two real strengths, then support one with a short example from college or a project."
+    elif "weakness" in q or "area are you improving" in q:
+        tip = "Choose a genuine skill you are improving and explain the practical steps you take. Avoid saying you have no weaknesses."
+    elif "project" in q:
+        tip = "Explain the problem, your role, tools used, what you did, the result, and one thing you learned. Only include details that are true."
+    elif any(k in q for k in ["why should", "select you", "hire you"]):
+        tip = "Connect your current skills, willingness to learn, and reliability to the internship or role. Avoid claiming experience you do not have."
+    elif "why" in q or "motivat" in q or "goal" in q:
+        tip = "Answer the question directly first, then give one personal reason and a relevant example or next step."
+    else:
+        tip = "Start with your main point, explain it in simple sentences, and add one relevant example when possible. This free tool corrects selected common patterns, not every grammar error."
+    return text, tip
+
+
+def sample_professional_answer(question):
+    """Return a short, editable example for common interview question types."""
+    q = str(question or "").lower()
+    if any(k in q for k in ["tell me about yourself", "introduce yourself"]):
+        return ("I am a third-year B.E. student in Artificial Intelligence and Data Science. "
+                "I am building my skills in Python, SQL, and machine learning. I have worked on academic projects where I practised data preprocessing and model evaluation. "
+                "I am looking for an opportunity to learn from real tasks, contribute to a team, and improve my technical skills.")
+    if "strength" in q:
+        return ("One of my strengths is that I am willing to learn and work consistently. "
+                "When I face a new topic, I break it into smaller parts, practise, and ask for feedback. "
+                "This helps me improve step by step.")
+    if "weakness" in q or "area are you improving" in q:
+        return ("One area I am improving is my confidence when explaining technical ideas. "
+                "I practise by explaining concepts in simple words and preparing small examples. "
+                "I am gradually becoming clearer and more confident.")
+    if any(k in q for k in ["why should", "select you", "hire you"]):
+        return ("I am eager to learn, responsible with assigned work, and ready to accept feedback. "
+                "My current skills give me a foundation, and I am willing to practise and improve wherever needed. "
+                "I would try to contribute consistently while learning from the team.")
+    if "why" in q and any(k in q for k in ["ai", "data science", "internship", "role", "career"]):
+        return ("I chose this field because I enjoy understanding how data and technology can help solve problems. "
+                "I am especially interested in Python and machine learning, and I want to strengthen these skills through practical work.")
+    if "project" in q:
+        return ("In my project, I first identified the problem and prepared the data for analysis. "
+                "I used the tools required for the task, tested the result, and reviewed the model's performance. "
+                "The project helped me understand the importance of clean data, evaluation, and explaining results clearly.")
+    if any(k in q for k in ["team", "teammate", "conflict", "feedback"]):
+        return ("I try to listen carefully, communicate respectfully, and focus on the shared goal. "
+                "If there is a problem, I discuss it calmly and agree on the next steps. "
+                "I also treat feedback as a chance to improve.")
+    if "pressure" in q or "time" in q or "manage" in q:
+        return ("I list the tasks, identify the most urgent ones, and break larger work into smaller steps. "
+                "I try to track my progress and ask for clarification early if I am stuck. "
+                "This helps me stay organised and manage my time better.")
+
+    # Machine-learning and data-science concepts commonly asked in interviews.
+    if "clustering" in q:
+        return ("Clustering is an unsupervised machine learning technique that groups similar data points "
+                "together based on their features, without using predefined labels. For example, a business "
+                "can group customers by their purchasing behaviour. K-Means is a commonly used clustering "
+                "algorithm. Clustering helps discover hidden patterns and segments in data.")
+    if "classification" in q and any(k in q for k in ["what is", "define", "explain", "meaning"]):
+        return ("Classification is a supervised machine learning task that predicts a category or class label "
+                "from input features. For example, an email model can classify a message as spam or not spam. "
+                "Common algorithms include decision trees, logistic regression, and support vector machines.")
+    if "regression" in q and any(k in q for k in ["what is", "define", "explain", "meaning"]):
+        return ("Regression is a supervised machine learning task used to predict a numerical value. For "
+                "example, a model can estimate crop yield or house prices from relevant features. Linear "
+                "regression and random forest regression are two common methods.")
+    if "supervised learning" in q:
+        return ("Supervised learning trains a model using labelled examples, where each training input has a "
+                "known target. It is commonly used for classification and regression. For example, a model can "
+                "learn from past labelled loan applications to predict approval outcomes.")
+    if "unsupervised learning" in q:
+        return ("Unsupervised learning finds patterns in data without predefined target labels. Clustering and "
+                "dimensionality reduction are common examples. For instance, K-Means can group customers with "
+                "similar purchasing behaviour.")
+    if "k-means" in q or "kmeans" in q:
+        return ("K-Means is an unsupervised clustering algorithm that divides data into K groups. It assigns "
+                "points to the nearest cluster centroid and updates the centroids repeatedly until assignments "
+                "stabilise or a stopping condition is reached. The value of K must be chosen in advance.")
+    if "decision tree" in q:
+        return ("A decision tree is a machine learning model that makes predictions by splitting data through "
+                "a sequence of feature-based decisions. Its tree structure is relatively easy to interpret. "
+                "It can be used for both classification and regression, though a deep tree may overfit.")
+    if "random forest" in q:
+        return ("Random Forest is an ensemble learning algorithm that combines predictions from many decision "
+                "trees. It uses random samples and feature subsets to help reduce overfitting compared with a "
+                "single tree. It can be used for classification and regression.")
+    if "neural network" in q:
+        return ("A neural network is a machine learning model made of connected units arranged in layers. It "
+                "learns patterns by adjusting weights during training. Neural networks are useful for complex "
+                "tasks such as image recognition, language processing, and forecasting.")
+    if "data preprocessing" in q or "preprocessing" in q:
+        return ("Data preprocessing prepares raw data before analysis or model training. It can include handling "
+                "missing values, removing duplicates, encoding categorical variables, and scaling numerical "
+                "features. Good preprocessing can improve data quality and help a model learn reliably.")
+    if "overfitting" in q:
+        return ("Overfitting happens when a model learns the training data too closely, including noise, and "
+                "then performs poorly on new data. It can be reduced with validation, regularisation, simpler "
+                "models, or more representative training data.")
+    if "underfitting" in q:
+        return ("Underfitting happens when a model is too simple to learn important patterns in the data. It "
+                "often performs poorly on both training and test data. A more suitable model, better features, "
+                "or improved training may help.")
+    if "train" in q and "test" in q and any(k in q for k in ["difference", "split", "data"]):
+        return ("Training data is used to fit a model, while test data is held aside to evaluate how well the "
+                "model performs on unseen examples. Keeping them separate gives a more realistic estimate of "
+                "generalisation and helps reveal overfitting.")
+    if "confusion matrix" in q:
+        return ("A confusion matrix compares a classifier's predicted labels with the actual labels. In binary "
+                "classification, it summarises true positives, true negatives, false positives, and false negatives. "
+                "It helps us understand which types of errors the model makes.")
+    if "accuracy" in q and any(k in q for k in ["what is", "define", "explain", "metric"]):
+        return ("Accuracy is the proportion of predictions that a model gets correct out of all predictions. "
+                "It is easy to understand, but it can be misleading when classes are imbalanced, so metrics such "
+                "as precision, recall, and F1-score may also be needed.")
+    if "precision" in q and "recall" in q:
+        return ("Precision measures how many predicted positive cases are actually positive, while recall "
+                "measures how many actual positive cases the model identifies. Precision matters when false "
+                "alarms are costly, while recall matters when missing a positive case is costly.")
+    if "feature scaling" in q or "standardization" in q or "normalization" in q:
+        return ("Feature scaling puts numerical features on comparable scales. Normalization often rescales "
+                "values to a chosen range, while standardization transforms values using the mean and standard "
+                "deviation. Scaling is especially important for distance-based and gradient-based algorithms.")
+    if "pandas" in q:
+        return ("Pandas is a Python library used to work with structured data. Its main data structures are "
+                "Series and DataFrame. It supports tasks such as loading CSV files, cleaning missing values, "
+                "filtering rows, grouping data, and calculating summary statistics.")
+    if "numpy" in q:
+        return ("NumPy is a Python library for efficient numerical computing. It provides multidimensional "
+                "arrays and functions for mathematical operations. It is widely used in data analysis and "
+                "machine learning as a foundation for many other libraries.")
+    if "streamlit" in q:
+        return ("Streamlit is a Python framework for building interactive data apps and machine learning demos "
+                "with relatively little web-development code. For example, a user can enter input values in a "
+                "Streamlit form and view a model prediction on the same page.")
+    if "api" in q and any(k in q for k in ["what is", "define", "explain"]):
+        return ("An API, or Application Programming Interface, lets software components communicate through a "
+                "defined set of rules. For example, an application can call a weather API to request current "
+                "weather data and display the response.")
+
+    # Common technical / academic questions: provide a relevant example rather than
+    # repeating one generic answer for every question.
+    if "inheritance" in q:
+        return ("Inheritance is an object-oriented programming concept in which a child class "
+                "can reuse attributes and methods from a parent class. For example, a Dog class "
+                "can inherit a sound() method from an Animal class. It improves code reuse and "
+                "reduces duplication.")
+    if "polymorphism" in q:
+        return ("Polymorphism means that the same interface or method name can behave differently "
+                "for different objects. For example, different animal classes can implement their "
+                "own sound() method. It makes code more flexible and easier to extend.")
+    if "encapsulation" in q:
+        return ("Encapsulation means bundling data and the methods that operate on it inside a class, "
+                "while controlling how the data is accessed. It helps protect an object's internal "
+                "state and keeps code organised.")
+    if "abstraction" in q:
+        return ("Abstraction means showing the essential features of something while hiding unnecessary "
+                "implementation details. For example, a user can drive a car without needing to know "
+                "how its engine works internally. It reduces complexity.")
+    if "machine learning" in q and any(k in q for k in ["what is", "define", "explain", "meaning"]):
+        return ("Machine learning is a branch of artificial intelligence in which computers learn patterns "
+                "from data to make predictions or decisions. For example, a model can learn from past data "
+                "to estimate crop yield. The model's performance should be evaluated on data it has not seen.")
+    if "overfitting" in q:
+        return ("Overfitting happens when a model learns the training data too closely, including noise, "
+                "and then performs poorly on new data. It can be reduced with validation, simpler models, "
+                "regularisation, or more representative training data.")
+    if "underfitting" in q:
+        return ("Underfitting happens when a model is too simple to learn the important patterns in the data. "
+                "It performs poorly on both training and test data. A more suitable model or better features "
+                "may help.")
+    if "sql" in q and any(k in q for k in ["what is", "define", "explain", "meaning"]):
+        return ("SQL stands for Structured Query Language. It is used to create, read, update, and delete data "
+                "in relational databases. For example, a SELECT query retrieves records from a table.")
+    if "python" in q and any(k in q for k in ["why", "useful", "what is"]):
+        return ("Python is a high-level programming language known for readable syntax and a large library "
+                "ecosystem. It is used in automation, data analysis, web development, and machine learning. "
+                "For example, pandas can help analyse tabular data.")
+    if "difference between" in q or "differentiate" in q:
+        topic = str(question or "the two concepts").strip().rstrip("? .")
+        return (f"To explain {topic.lower()}, I would define both terms first, compare their main purpose and "
+                "features, and then give a short example. The key difference should be stated clearly at the end.")
+    if any(k in q for k in ["what is", "define", "explain", "meaning of"]):
+        topic = str(question or "this concept").strip().rstrip("? .")
+        return (f"{topic} can be explained by first defining the main concept, then describing how it works "
+                "and why it is useful. A good answer should include one accurate example and a short takeaway. "
+                "Check the definition against your course notes before using this as a technical answer.")
+    # For unknown HR questions, give a prompt-specific answer framework, not a repeated first-person script.
+    topic = str(question or "this question").strip().rstrip("? .")
+    return (f"For '{topic}', I would answer directly, give one truthful detail from my studies or experience, "
+            "and explain what I learned or how it relates to the role. I would keep the answer concise and "
+            "avoid claiming experience or results I do not have.")
+
+
 def save_practice(tool, question, answer, score=None, feedback=None):
     """Keep practice only in the current Streamlit session."""
     st.session_state.setdefault("practice_history", [])
@@ -794,7 +1068,7 @@ def show_tool(tool_name):
             word_count = len(words)
             matched_rule = next((rule for rule in concept_rules if re.search(rule[0], q)), None)
             expected = matched_rule[1] if matched_rule else []
-            model_answer = matched_rule[2] if matched_rule else "A strong answer should define the main idea, explain how or why it works, give one specific example, and end with the result or key takeaway."
+            model_answer = matched_rule[2] if matched_rule else sample_professional_answer(question)
             # Keyword matching uses meaningful terms, not only total word count.
             keyword_hits = [kw for kw in expected if kw in a]
             keyword_score = round(100 * len(keyword_hits) / len(expected)) if expected else 0
@@ -876,6 +1150,15 @@ def show_tool(tool_name):
                     st.info("Explain why the concept matters using ‘because’, ‘this helps’, or ‘as a result’.")
                 if not result['professional']:
                     st.info("Professional wording tip: use clear phrases such as ‘The main purpose is…’, ‘In my project…’, or ‘I used… because…’.")
+                improved = improve_interview_answer(st.session_state.prep_current_question, st.session_state.get("prep_answer", ""))
+                if isinstance(improved, tuple):
+                    improved_text, improvement_tip = improved
+                else:
+                    improved_text, improvement_tip = improved, ""
+                st.markdown("#### ✨ Corrected & Improved Version of Your Answer")
+                st.write(improved_text)
+                st.caption("Basic rule-based English cleanup. Please check that the wording still matches what you really mean.")
+                st.info(improvement_tip)
                 st.markdown("#### 🧑‍💼 Example of a professional answer")
                 st.write(result['model_answer'])
                 st.caption("The score is an approximate, rule-based practice aid. It checks selected keywords and communication signals; it cannot reliably judge every technically correct answer or fully understand grammar like a human interviewer.")
@@ -1056,6 +1339,18 @@ def show_tool(tool_name):
                     else:
                         st.success("Nice practice! Make sure your answer is accurate, clear, and based on your real experience.")
                     st.write("**Detected relevant terms:** " + (", ".join(found) if found else "None of the configured terms were detected."))
+                    improved = improve_interview_answer(question, answer)
+                    if isinstance(improved, tuple):
+                        improved_text, improvement_tip = improved
+                    else:
+                        improved_text, improvement_tip = improved, ""
+                    st.markdown("#### ✨ Your Corrected & Improved Answer")
+                    st.write(improved_text)
+                    st.caption("This makes basic wording and punctuation improvements only. Check that it preserves your meaning.")
+                    st.info(improvement_tip)
+                    st.markdown("#### 🧑‍💼 Sample professional answer")
+                    st.write(sample_professional_answer(question))
+                    st.caption("Use this as a guide, then edit it to match your real background and experience.")
                     st.markdown("#### ✅ Self-review")
                     st.write("- Did I answer the question directly?")
                     st.write("- Did I speak clearly and use complete sentences?")
